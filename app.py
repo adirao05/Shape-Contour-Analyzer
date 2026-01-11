@@ -1,10 +1,7 @@
+import streamlit as st
 import cv2
 import numpy as np
 import pandas as pd
-import streamlit as st
-from PIL import Image
-
-MIN_CONTOUR_AREA = 500  
 
 st.set_page_config(
     page_title="NEON VISION HUD",
@@ -12,9 +9,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# --------------------- NEON HUD STYLING --------------------- #
 st.markdown("""
 <style>
-
 /* GRID BACKGROUND */
 .stApp {
     background:
@@ -41,6 +38,7 @@ st.markdown("""
     padding: 1.4rem;
     border-radius: 16px;
     background: rgba(2,6,23,0.85);
+    margin-bottom: 20px;
 }
 
 /* METRICS */
@@ -72,139 +70,113 @@ st.markdown("""
 
 /* REMOVE FOOTER */
 footer {visibility: hidden;}
-
 </style>
 """, unsafe_allow_html=True)
 
+# --------------------- HEADER --------------------- #
 st.markdown("""
 <div class="hud-header">
-    <h1>Shape & Contour Analyzer</h1>
-    <p>Real-Time Shape Detection System (23MIA1120 - Aditya Rao B)</p>
+    <h1>Contour Object Analyzer</h1>
+    <p>Geometric Shape Detection & Measurement</p>
 </div>
 """, unsafe_allow_html=True)
 
-st.write("")
-
+# --------------------- UPLOADER PANEL --------------------- #
 st.markdown('<div class="hud-panel">', unsafe_allow_html=True)
-
 uploaded_file = st.file_uploader(
-    "UPLOAD IMAGE SIGNAL",
+    "Upload Image",
     type=["png", "jpg", "jpeg"]
 )
-
 st.markdown('</div>', unsafe_allow_html=True)
-def classify_shape(approx, contour):
-    v = len(approx)
-    if v == 3:
-        return "TRIANGLE"
-    elif v == 4:
-        x, y, w, h = cv2.boundingRect(approx)
-        return "SQUARE" if 0.95 <= w / float(h) <= 1.05 else "RECTANGLE"
-    elif v > 4:
-        return "CIRCLE"
-    return "UNKNOWN"
 
-if uploaded_file:
+# --------------------- BACKEND LOGIC --------------------- #
+def resize_for_display(img):
+    h, w = img.shape[:2]
+    scale = min(500 / w, 380 / h)
+    if scale < 1:
+        img = cv2.resize(img, (int(w * scale), int(h * scale)))
+    return img
 
-    image = Image.open(uploaded_file)
-    image_np = np.array(image)
+def detect_shapes(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    edges = cv2.dilate(edges, np.ones((3,3), np.uint8), 1)
 
-    gray = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edged = cv2.Canny(blurred, 50, 150)
-
-    contours, _ = cv2.findContours(
-        edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-
-    output_image = image_np.copy()
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     results = []
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < MIN_CONTOUR_AREA:
+        if area < 1000:
             continue
 
-        peri = cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-        shape = classify_shape(approx, cnt)
+        perimeter = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * perimeter, True)
+        v = len(approx)
 
-        cv2.drawContours(output_image, [cnt], -1, (0, 255, 255), 3)
+        if v == 3:
+            shape = "Triangle"
+        elif v == 4:
+            w, h = cv2.minAreaRect(cnt)[1]
+            if min(w,h) == 0:
+                continue
+            shape = "Square" if max(w,h)/min(w,h) < 1.15 else "Rectangle"
+        elif v == 5:
+            shape = "Pentagon"
+        elif v == 6:
+            shape = "Hexagon"
+        else:
+            shape = "Circle" if (4*np.pi*area)/(perimeter**2) > 0.8 else "Irregular"
 
-        x, y, w, h = cv2.boundingRect(approx)
-        cv2.putText(
-            output_image,
-            shape,
-            (x, y - 8),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 0, 255),
-            2
-        )
+        cv2.drawContours(image, [approx], -1, (0, 220, 120), 3)
+        cv2.putText(image, shape, (approx[0][0][0], approx[0][0][1]-6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 220, 120), 2)
 
-        results.append([shape, area, peri])
+        results.append([shape, round(area,2), round(perimeter,2)])
 
-    df = pd.DataFrame(
-        results,
-        columns=["SHAPE", "AREA (px²)", "PERIMETER (px)"]
-    )
+    return image, results
 
-    m1, m2, m3 = st.columns(3)
+# --------------------- PROCESSING --------------------- #
+if uploaded_file:
+    img_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    image = cv2.imdecode(img_bytes, 1)
 
-    for col, val, label in zip(
-        [m1, m2, m3],
-        [len(df), df["SHAPE"].nunique(), df["AREA (px²)"].max()],
-        ["OBJECTS DETECTED", "SHAPE TYPES", "MAX AREA"]
-    ):
-        with col:
-            st.markdown(f"""
-            <div class="hud-metric">
-                <h2>{int(val)}</h2>
-                <span>{label}</span>
-            </div>
-            """, unsafe_allow_html=True)
+    processed, data = detect_shapes(image.copy())
 
-    st.write("")
+    # --------------------- IMAGE DISPLAY --------------------- #
+    col1, col2 = st.columns(2)
 
-    i1, i2 = st.columns(2)
-
-    with i1:
-        st.markdown('<div class="hud-image">', unsafe_allow_html=True)
-        st.image(image, use_container_width=True)
+    with col1:
+        st.markdown('<div class="hud-panel"><h3>Original Image</h3>', unsafe_allow_html=True)
+        st.image(resize_for_display(image), channels="BGR", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with i2:
-        st.markdown('<div class="hud-image">', unsafe_allow_html=True)
-        st.image(output_image, use_container_width=True)
+    with col2:
+        st.markdown('<div class="hud-panel"><h3>Detected Contours</h3>', unsafe_allow_html=True)
+        st.image(resize_for_display(processed), channels="BGR", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.write("")
+    # --------------------- METRICS --------------------- #
+    if data:
+        df = pd.DataFrame(data, columns=["Shape", "Area", "Perimeter"])
 
-    st.markdown('<div class="hud-panel">', unsafe_allow_html=True)
-    st.subheader("MEASUREMENT MATRIX")
+        m1, m2, m3 = st.columns(3)
+        metrics = [len(df), df["Shape"].nunique(), df["Area"].max()]
+        labels = ["OBJECTS DETECTED", "SHAPE TYPES", "MAX AREA"]
 
-    st.dataframe(
-        df.style
-        .format({
-            "AREA (px²)": "{:.2f}",
-            "PERIMETER (px)": "{:.2f}"
-        })
-        .set_table_styles([
-            {"selector": "th", "props": [
-                ("background-color", "#020617"),
-                ("color", "#22d3ee"),
-                ("border", "1px solid #22d3ee")
-            ]},
-            {"selector": "td", "props": [
-                ("background-color", "rgba(2,6,23,0.9)"),
-                ("color", "#e0f2fe"),
-                ("border", "1px solid rgba(34,211,238,0.3)")
-            ]}
-        ]),
-        use_container_width=True
-    )
+        for col, val, label in zip([m1, m2, m3], metrics, labels):
+            with col:
+                st.markdown(f"""
+                <div class="hud-metric">
+                    <h2>{int(val)}</h2>
+                    <span>{label}</span>
+                </div>
+                """, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        # --------------------- DATA TABLE --------------------- #
+        st.markdown('<div class="hud-panel"><h3>Measurements</h3>', unsafe_allow_html=True)
+        st.dataframe(df, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    st.warning("AWAITING IMAGE INPUT SIGNAL...")
+    st.info("Upload an image to start contour analysis.")
