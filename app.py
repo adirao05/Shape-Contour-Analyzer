@@ -77,7 +77,7 @@ footer {visibility: hidden;}
 st.markdown("""
 <div class="hud-header">
     <h1>Shape & Contour Analyzer</h1>
-    <p>Developed By 23MIA1120 Aditya Rao B</p>
+    <p>Developed By Aditya Rao B (23MIA1120)</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -180,4 +180,5 @@ if uploaded_file:
 
 else:
     st.info("Upload an image to start contour analysis.")
+
 
