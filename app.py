@@ -76,8 +76,8 @@ footer {visibility: hidden;}
 # --------------------- HEADER --------------------- #
 st.markdown("""
 <div class="hud-header">
-    <h1>Contour Object Analyzer</h1>
-    <p>Geometric Shape Detection & Measurement (23MIA1120 Aditya Rao B)</p>
+    <h1>Shape & Contour Analyzer</h1>
+    <p>Developed By 23MIA1120 Aditya Rao B</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -180,3 +180,4 @@ if uploaded_file:
 
 else:
     st.info("Upload an image to start contour analysis.")
+
