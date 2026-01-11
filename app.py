@@ -77,7 +77,7 @@ footer {visibility: hidden;}
 st.markdown("""
 <div class="hud-header">
     <h1>Contour Object Analyzer</h1>
-    <p>Geometric Shape Detection & Measurement</p>
+    <p>Geometric Shape Detection & Measurement (23MIA1120 Aditya Rao B)</p>
 </div>
 """, unsafe_allow_html=True)
 
